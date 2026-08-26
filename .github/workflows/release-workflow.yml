@@ -1,0 +1,132 @@
+name: Build and Release
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+
+jobs:
+  build-release:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Parse Metadata from Manifest TOML
+        id: parse_toml
+        run: |
+          PLUGIN_NAME=$(yq '.name' manifest.toml)
+          ENTRY_POINT=$(yq '.entry_point' manifest.toml)
+
+          if [ -z "$PLUGIN_NAME" ] || [ "$PLUGIN_NAME" = "null" ]; then
+            echo "Error: name not found or empty in manifest.toml"
+            exit 1
+          fi
+
+          if [ -z "$ENTRY_POINT" ] || [ "$ENTRY_POINT" = "null" ]; then
+            echo "Error: entry_point not found or empty in manifest.toml"
+            exit 1
+          fi
+
+          echo "plugin_name=$PLUGIN_NAME" >> $GITHUB_OUTPUT
+          echo "entry_point=$ENTRY_POINT" >> $GITHUB_OUTPUT
+
+          if [[ "$ENTRY_POINT" == *.ts ]]; then
+            echo "is_typescript=true" >> $GITHUB_OUTPUT
+          else
+            echo "is_typescript=false" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Setup Node.js (TypeScript Only)
+        if: steps.parse_toml.outputs.is_typescript == 'true'
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Install TypeScript Compiler (TypeScript Only)
+        if: steps.parse_toml.outputs.is_typescript == 'true'
+        run: npm install -g typescript
+
+      - name: Prepare Distribution Staging Directory
+        run: |
+          mkdir -p dist
+
+          if [ -d src ]; then
+            cp -r src/ dist/src/
+          fi
+
+          if [ -f manifest.toml ]; then
+            cp manifest.toml dist/
+          fi
+
+      - name: Gather or Generate TypeScript Definitions
+        run: |
+          if [ "${{ steps.parse_toml.outputs.is_typescript }}" = "true" ]; then
+            echo "Generating definitions from TypeScript source project..."
+            
+            mkdir -p build-types
+            tsc --project . --outDir build-types
+            
+            echo "Dynamically isolating public entrypoint exports..."
+            rm -f dist/index.d.ts
+            touch dist/index.d.ts
+            
+            if [ -f build-types/index.d.ts ]; then
+              awk '
+                # Match line-by-line: only grab lines that declare public exports
+                /export declare (function|const|var|let|class|interface|type)/ {
+                  print $0;
+                }
+              ' build-types/index.d.ts > dist/index.d.ts
+            else
+              echo "Error: Main entrypoint type definition file not found"
+              exit 1
+            fi
+            
+            rm -rf build-types
+            
+            if [ -s dist/index.d.ts ]; then
+              echo "Successfully generated filtered unified dist/index.d.ts file!"
+              cat dist/index.d.ts
+            else
+              echo "Error: Unified definition file is empty or missing"
+              exit 1
+            fi
+          else
+            echo "JavaScript detected. Looking for existing hand-crafted d.ts file..."
+            if [ -f src/index.d.ts ]; then
+              cp src/index.d.ts dist/
+            fi
+          fi
+
+      - name: Gather Optional Distribution Documentation Assets
+        run: |
+          if [ -f README.md ]; then
+            cp README.md dist/
+          fi
+          if [ -f CHANGELOG.md ]; then
+            cp CHANGELOG.md dist/
+          fi
+
+      - name: Compress Staged Files into Plugin Zip Archive
+        run: |
+          ZIP_NAME="${{ steps.parse_toml.outputs.plugin_name }}.zip"
+          cd dist
+          zip -r "../$ZIP_NAME" ./*
+          cd ..
+          echo "Created archive: $ZIP_NAME"
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            ${{ steps.parse_toml.outputs.plugin_name }}.zip
+          fail_on_unmatched_files: true
+          generate_release_notes: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
