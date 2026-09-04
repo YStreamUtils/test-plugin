@@ -59,20 +59,24 @@ jobs:
 
       - name: Compile Code via esbuild
         run: |
-          ENTRY="${{ steps.parse_json.outputs.entry_point }}"
-          NAME="${{ steps.parse_json.outputs.plugin_name }}"
-          
-          echo "Bundling entrypoint: $ENTRY into isolated global namespace..."
-          
-          npx esbuild "$ENTRY" \
+          ENTRY="${{ steps.parse_json.outputs.plugin_name }}"
+          SAFE_NAME=$(echo "$ENTRY" | tr '-' '_')
+
+          echo "Bundling entrypoint: ${{ steps.parse_json.outputs.entry_point }} into clean namespace: $SAFE_NAME..."
+
+          # 🚀 FIXED: printf safely evaluates line feeds without breaking YAML indentation boundaries
+          BANNER_TEXT=$(printf "var %s = (function(host) {\n" "$SAFE_NAME")
+          FOOTER_TEXT=$(printf "\n  return tempPlugin;\n})(host);")
+
+          npx esbuild "${{ steps.parse_json.outputs.entry_point }}" \
             --bundle \
             --minify-syntax \
             --minify-whitespace \
             --format=iife \
             --global-name=tempPlugin \
-            --banner:js="var $NAME = (function(host) {\n" \
-            --footer:js="\n  return tempPlugin;\n})(host);" \
-            --outfile="dist/$ENTRY"
+            --banner:js="$BANNER_TEXT" \
+            --footer:js="$FOOTER_TEXT" \
+            --outfile="dist/${{ steps.parse_json.outputs.entry_point }}"
 
       - name: Gather or Generate TypeScript Definitions
         run: |
