@@ -17,19 +17,19 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Parse Metadata from Manifest TOML
-        id: parse_toml
+      - name: Parse Metadata from Manifest JSON
+        id: parse_json
         run: |
-          PLUGIN_NAME=$(yq '.name' manifest.toml)
-          ENTRY_POINT=$(yq '.entry_point' manifest.toml)
+          PLUGIN_NAME=$(jq -r '.name' manifest.json)
+          ENTRY_POINT=$(jq -r '.entryPoint' manifest.json)
 
           if [ -z "$PLUGIN_NAME" ] || [ "$PLUGIN_NAME" = "null" ]; then
-            echo "Error: name not found or empty in manifest.toml"
+            echo "Error: name not found or empty in manifest.json"
             exit 1
           fi
 
           if [ -z "$ENTRY_POINT" ] || [ "$ENTRY_POINT" = "null" ]; then
-            echo "Error: entry_point not found or empty in manifest.toml"
+            echo "Error: entryPoint not found or empty in manifest.json"
             exit 1
           fi
 
@@ -42,35 +42,45 @@ jobs:
             echo "is_typescript=false" >> $GITHUB_OUTPUT
           fi
 
-      - name: Setup Node.js (TypeScript Only)
-        if: steps.parse_toml.outputs.is_typescript == 'true'
+      - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
           node-version: 20
 
-      - name: Install TypeScript Compiler (TypeScript Only)
-        if: steps.parse_toml.outputs.is_typescript == 'true'
-        run: npm install -g typescript
+      - name: Prepare Compilation Environment
+        run: |
+          npm install -g esbuild
+          if [ "${{ steps.parse_json.outputs.is_typescript }}" = "true" ]; then
+            npm install -g typescript
+          fi
 
       - name: Prepare Distribution Staging Directory
+        run: mkdir -p dist
+
+      - name: Compile Code via esbuild
         run: |
-          mkdir -p dist
-
-          if [ -d src ]; then
-            cp -r src/ dist/src/
-          fi
-
-          if [ -f manifest.toml ]; then
-            cp manifest.toml dist/
-          fi
+          ENTRY="${{ steps.parse_json.outputs.entry_point }}"
+          NAME="${{ steps.parse_json.outputs.plugin_name }}"
+          
+          echo "Bundling entrypoint: $ENTRY into isolated global namespace..."
+          
+          npx esbuild "$ENTRY" \
+            --bundle \
+            --minify-syntax \
+            --minify-whitespace \
+            --format=iife \
+            --global-name=tempPlugin \
+            --banner:js="var $NAME = (function(host) {\n" \
+            --footer:js="\n  return tempPlugin;\n})(host);" \
+            --outfile="dist/$ENTRY"
 
       - name: Gather or Generate TypeScript Definitions
         run: |
-          if [ "${{ steps.parse_toml.outputs.is_typescript }}" = "true" ]; then
+          if [ "${{ steps.parse_json.outputs.is_typescript }}" = "true" ]; then
             echo "Generating definitions from TypeScript source project..."
             
             mkdir -p build-types
-            tsc --project . --outDir build-types
+            tsc --project . --outDir build-types --declaration --emitDeclarationOnly
             
             echo "Dynamically isolating public entrypoint exports..."
             rm -f dist/index.d.ts
@@ -78,7 +88,6 @@ jobs:
             
             if [ -f build-types/index.d.ts ]; then
               awk '
-                # Match line-by-line: only grab lines that declare public exports
                 /export declare (function|const|var|let|class|interface|type)/ {
                   print $0;
                 }
@@ -89,23 +98,18 @@ jobs:
             fi
             
             rm -rf build-types
-            
-            if [ -s dist/index.d.ts ]; then
-              echo "Successfully generated filtered unified dist/index.d.ts file!"
-              cat dist/index.d.ts
-            else
-              echo "Error: Unified definition file is empty or missing"
-              exit 1
-            fi
           else
-            echo "JavaScript detected. Looking for existing hand-crafted d.ts file..."
+            echo "JavaScript detected. Looking for existing d.ts file..."
             if [ -f src/index.d.ts ]; then
               cp src/index.d.ts dist/
             fi
           fi
 
-      - name: Gather Optional Distribution Documentation Assets
+      - name: Finalize Bundle Assets
         run: |
+          if [ -f manifest.json ]; then
+            cp manifest.json dist/
+          fi
           if [ -f README.md ]; then
             cp README.md dist/
           fi
@@ -115,7 +119,7 @@ jobs:
 
       - name: Compress Staged Files into Plugin Zip Archive
         run: |
-          ZIP_NAME="${{ steps.parse_toml.outputs.plugin_name }}.zip"
+          ZIP_NAME="${{ steps.parse_json.outputs.plugin_name }}.zip"
           cd dist
           zip -r "../$ZIP_NAME" ./*
           cd ..
@@ -125,7 +129,7 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           files: |
-            ${{ steps.parse_toml.outputs.plugin_name }}.zip
+            ${{ steps.parse_json.outputs.plugin_name }}.zip
           fail_on_unmatched_files: true
           generate_release_notes: true
         env:
