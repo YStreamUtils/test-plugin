@@ -3,7 +3,7 @@ import fs from "fs";
 import path from "path";
 import bestzip from "bestzip";
 import * as tsj from "ts-json-schema-generator";
-import ts from "typescript";
+import { execSync } from "child_process";
 
 async function build() {
   try {
@@ -29,22 +29,19 @@ async function build() {
     });
 
     console.log("Generating type definitions (index.d.ts)...");
-    const program = ts.createProgram([manifest.entryPoint], {
-      declaration: true,
-      emitDeclarationOnly: true,
-      outDir: "dist",
-    });
-    
-    const emitResult = program.emit();
-    
-    if (emitResult.emitSkipped) {
-      console.warn("Warning: Type definition generation encountered errors.");
-    }
-
-    const generatedDtsPath = path.join("dist", path.basename(manifest.entryPoint).replace(/\.ts\$/, ".d.ts"));
-    const finalDtsPath = "dist/index.d.ts";
-    if (fs.existsSync(generatedDtsPath) && generatedDtsPath !== finalDtsPath) {
-      fs.renameSync(generatedDtsPath, finalDtsPath);
+    try {
+      execSync(
+        `npx tsc ${manifest.entryPoint} --declaration --emitDeclarationOnly --outDir dist`,
+        { stdio: "inherit" }
+      );
+      
+      const generatedDtsPath = path.join("dist", path.basename(manifest.entryPoint).replace(/\.ts\$/, ".d.ts"));
+      const finalDtsPath = "dist/index.d.ts";
+      if (fs.existsSync(generatedDtsPath) && generatedDtsPath !== finalDtsPath) {
+        fs.renameSync(generatedDtsPath, finalDtsPath);
+      }
+    } catch (tscErr) {
+      console.warn("Warning: Type definition generation encountered compilation errors.");
     }
 
     if (fs.existsSync("src/settings.ts")) {
