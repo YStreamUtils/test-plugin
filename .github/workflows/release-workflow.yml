@@ -31,8 +31,8 @@ jobs:
         run: |
           ENTRY_POINT=$(jq -r '.entryPoint' manifest.json)
           MANIFEST_NAME=$(jq -r '.name' manifest.json)
-          SANITIZED_NAME=$(echo "$MANIFEST_NAME" | sed 's/[^a-zA-Z0-9\-_]/_/g')
-          
+          SANITIZED_NAME=$(echo "$MANIFEST_NAME" | sed 's/[^a-zA-Z0-9\-]/-/g' | tr '[:upper:]' '[:lower:]')
+
           echo "entry_point=$ENTRY_POINT" >> $GITHUB_OUTPUT
           echo "zip_name=${SANITIZED_NAME}.zip" >> $GITHUB_OUTPUT
 
@@ -67,7 +67,7 @@ jobs:
           ARCHIVE_ITEMS=("index.js" "manifest.json")
           [ -f "index.d.ts" ] && ARCHIVE_ITEMS+=("index.d.ts")
           [ -f "schema.json" ] && ARCHIVE_ITEMS+=("schema.json")
-          
+
           npx bestzip "../${{ steps.parse_env.outputs.zip_name }}" "${ARCHIVE_ITEMS[@]}"
           cd ..
 
