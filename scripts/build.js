@@ -3,6 +3,7 @@ import fs from "fs";
 import path from "path";
 import bestzip from "bestzip";
 import * as tsj from "ts-json-schema-generator";
+import ts from "typescript";
 
 async function build() {
   try {
@@ -27,6 +28,25 @@ async function build() {
       outfile: "dist/index.js",
     });
 
+    console.log("Generating type definitions (index.d.ts)...");
+    const program = ts.createProgram([manifest.entryPoint], {
+      declaration: true,
+      emitDeclarationOnly: true,
+      outDir: "dist",
+    });
+    
+    const emitResult = program.emit();
+    
+    if (emitResult.emitSkipped) {
+      console.warn("Warning: Type definition generation encountered errors.");
+    }
+
+    const generatedDtsPath = path.join("dist", path.basename(manifest.entryPoint).replace(/\.ts\$/, ".d.ts"));
+    const finalDtsPath = "dist/index.d.ts";
+    if (fs.existsSync(generatedDtsPath) && generatedDtsPath !== finalDtsPath) {
+      fs.renameSync(generatedDtsPath, finalDtsPath);
+    }
+
     if (fs.existsSync("src/settings.ts")) {
       console.log(
         "Automatically generating schema.json from src/settings.ts...",
@@ -48,6 +68,8 @@ async function build() {
 
     console.log("Packaging extension artifacts...");
     const archiveItems = ["index.js", "manifest.json"];
+    
+    if (fs.existsSync("dist/index.d.ts")) archiveItems.push("index.d.ts");
     if (fs.existsSync("dist/schema.json")) archiveItems.push("schema.json");
 
     await bestzip({
