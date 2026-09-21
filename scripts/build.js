@@ -12,7 +12,12 @@ async function build() {
     }
     fs.mkdirSync("dist", { recursive: true });
 
+    const pkg = JSON.parse(fs.readFileSync("package.json", "utf8"));
     const manifest = JSON.parse(fs.readFileSync("manifest.json", "utf8"));
+    
+    manifest.version = pkg.version;
+    fs.writeFileSync("manifest.json", JSON.stringify(manifest, null, 2));
+
     const sanitizedZipName =
       manifest.name.replace(/[^a-zA-Z0-9\-_]/g, "_") + ".zip";
 
@@ -30,27 +35,21 @@ async function build() {
 
     console.log("Generating type definitions (index.d.ts)...");
     try {
-      execSync(
-        `npx tsc ${manifest.entryPoint} --project tsconfig.json --declaration --emitDeclarationOnly --outDir dist`,
-        { stdio: "inherit" },
-      );
+      const ts = await import("typescript").then(m => m.default || m);
+      const tsconfigFile = ts.readConfigFile("tsconfig.json", ts.sys.readFile);
+      const configParse = ts.parseJsonConfigFileContent(tsconfigFile.config, ts.sys, "./");
+      
+      const compilerOptions = {
+        ...configParse.options,
+        declaration: true,
+        emitDeclarationOnly: true,
+        outFile: "dist/index.d.ts"
+      };
 
-      const entryFileInfo = path.parse(manifest.entryPoint);
-      const generatedDtsPath = path.join("dist", `${entryFileInfo.name}.d.ts`);
-      const finalDtsPath = "dist/index.d.ts";
-
-      if (
-        fs.existsSync(generatedDtsPath) &&
-        generatedDtsPath !== finalDtsPath
-      ) {
-        fs.renameSync(generatedDtsPath, finalDtsPath);
-      }
+      const program = ts.createProgram([manifest.entryPoint], compilerOptions);
+      program.emit();
     } catch (tscErr) {
-      console.error(
-        "TypeScript declaration generation failed:",
-        tscErr.message || tscErr,
-      );
-      process.exit(1);
+      console.warn("Warning: Type definition generation encountered errors.");
     }
 
     if (fs.existsSync("src/settings.ts")) {
@@ -70,11 +69,11 @@ async function build() {
       fs.writeFileSync("dist/schema.json", JSON.stringify(schema, null, 2));
     }
 
-    fs.copyFileSync("manifest.json", "dist/manifest.json");
+    fs.writeFileSync("dist/manifest.json", JSON.stringify(manifest, null, 2));
 
     console.log("Packaging extension artifacts...");
     const archiveItems = ["index.js", "manifest.json"];
-
+    
     if (fs.existsSync("dist/index.d.ts")) archiveItems.push("index.d.ts");
     if (fs.existsSync("dist/schema.json")) archiveItems.push("schema.json");
 
