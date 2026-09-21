@@ -31,17 +31,13 @@ async function build() {
     console.log("Generating type definitions (index.d.ts)...");
     try {
       execSync(
-        `npx tsc ${manifest.entryPoint} --declaration --emitDeclarationOnly --outDir dist`,
-        { stdio: "inherit" }
+        `npx tsc ${manifest.entryPoint} --declaration --emitDeclarationOnly --outFile dist/index.d.ts`,
+        { stdio: "inherit" },
       );
-      
-      const generatedDtsPath = path.join("dist", path.basename(manifest.entryPoint).replace(/\.ts\$/, ".d.ts"));
-      const finalDtsPath = "dist/index.d.ts";
-      if (fs.existsSync(generatedDtsPath) && generatedDtsPath !== finalDtsPath) {
-        fs.renameSync(generatedDtsPath, finalDtsPath);
-      }
     } catch (tscErr) {
-      console.warn("Warning: Type definition generation encountered compilation errors.");
+      console.warn(
+        "Warning: Type definition generation encountered compilation errors.",
+      );
     }
 
     if (fs.existsSync("src/settings.ts")) {
@@ -65,7 +61,7 @@ async function build() {
 
     console.log("Packaging extension artifacts...");
     const archiveItems = ["index.js", "manifest.json"];
-    
+
     if (fs.existsSync("dist/index.d.ts")) archiveItems.push("index.d.ts");
     if (fs.existsSync("dist/schema.json")) archiveItems.push("schema.json");
 
