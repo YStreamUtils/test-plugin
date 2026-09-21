@@ -17,123 +17,29 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Parse Metadata from Manifest JSON
-        id: parse_json
-        run: |
-          PLUGIN_NAME=$(jq -r '.name' manifest.json)
-          ENTRY_POINT=$(jq -r '.entryPoint' manifest.json)
-
-          if [ -z "$PLUGIN_NAME" ] || [ "$PLUGIN_NAME" = "null" ]; then
-            echo "Error: name not found or empty in manifest.json"
-            exit 1
-          fi
-
-          if [ -z "$ENTRY_POINT" ] || [ "$ENTRY_POINT" = "null" ]; then
-            echo "Error: entryPoint not found or empty in manifest.json"
-            exit 1
-          fi
-
-          echo "plugin_name=$PLUGIN_NAME" >> $GITHUB_OUTPUT
-          echo "entry_point=$ENTRY_POINT" >> $GITHUB_OUTPUT
-
-          if [[ "$ENTRY_POINT" == *.ts ]]; then
-            echo "is_typescript=true" >> $GITHUB_OUTPUT
-          else
-            echo "is_typescript=false" >> $GITHUB_OUTPUT
-          fi
-
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
           node-version: 20
+          cache: 'npm'
 
-      - name: Prepare Compilation Environment
+      - name: Install Project Tooling
+        run: npm ci
+
+      - name: Execute Package Pipeline
+        run: npm run build
+
+      - name: Parse Zip Name for Release
+        id: parse_name
         run: |
-          npm install -g esbuild
-          if [ "${{ steps.parse_json.outputs.is_typescript }}" = "true" ]; then
-            npm install -g typescript
-          fi
-
-      - name: Prepare Distribution Staging Directory
-        run: mkdir -p dist
-
-      - name: Compile Code via esbuild
-        run: |
-          ENTRY="${{ steps.parse_json.outputs.plugin_name }}"
-          SAFE_NAME=$(echo "$ENTRY" | tr '-' '_')
-
-          echo "Bundling entrypoint: ${{ steps.parse_json.outputs.entry_point }} into clean namespace: $SAFE_NAME..."
-
-          # 🚀 FIXED: printf safely evaluates line feeds without breaking YAML indentation boundaries
-          BANNER_TEXT=$(printf "var %s = (function(host) {\n" "$SAFE_NAME")
-          FOOTER_TEXT=$(printf "\n  return tempPlugin;\n})(host);")
-
-          npx esbuild "${{ steps.parse_json.outputs.entry_point }}" \
-            --bundle \
-            --minify-syntax \
-            --minify-whitespace \
-            --format=iife \
-            --global-name=tempPlugin \
-            --banner:js="$BANNER_TEXT" \
-            --footer:js="$FOOTER_TEXT" \
-            --outfile="dist/${{ steps.parse_json.outputs.entry_point }}"
-
-      - name: Gather or Generate TypeScript Definitions
-        run: |
-          if [ "${{ steps.parse_json.outputs.is_typescript }}" = "true" ]; then
-            echo "Generating definitions from TypeScript source project..."
-            
-            mkdir -p build-types
-            tsc --project . --outDir build-types --declaration --emitDeclarationOnly
-            
-            echo "Dynamically isolating public entrypoint exports..."
-            rm -f dist/index.d.ts
-            touch dist/index.d.ts
-            
-            if [ -f build-types/index.d.ts ]; then
-              awk '
-                /export declare (function|const|var|let|class|interface|type)/ {
-                  print $0;
-                }
-              ' build-types/index.d.ts > dist/index.d.ts
-            else
-              echo "Error: Main entrypoint type definition file not found"
-              exit 1
-            fi
-            
-            rm -rf build-types
-          else
-            echo "JavaScript detected. Looking for existing d.ts file..."
-            if [ -f src/index.d.ts ]; then
-              cp src/index.d.ts dist/
-            fi
-          fi
-
-      - name: Finalize Bundle Assets
-        run: |
-          if [ -f manifest.json ]; then
-            cp manifest.json dist/
-          fi
-          if [ -f README.md ]; then
-            cp README.md dist/
-          fi
-          if [ -f CHANGELOG.md ]; then
-            cp CHANGELOG.md dist/
-          fi
-
-      - name: Compress Staged Files into Plugin Zip Archive
-        run: |
-          ZIP_NAME="${{ steps.parse_json.outputs.plugin_name }}.zip"
-          cd dist
-          zip -r "../$ZIP_NAME" ./*
-          cd ..
-          echo "Created archive: $ZIP_NAME"
+          PLUGIN_NAME=$(jq -r '.name' manifest.json)
+          echo "zip_name=${PLUGIN_NAME}.zip" >> $GITHUB_OUTPUT
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
           files: |
-            ${{ steps.parse_json.outputs.plugin_name }}.zip
+            ${{ steps.parse_name.outputs.zip_name }}
           fail_on_unmatched_files: true
           generate_release_notes: true
         env:

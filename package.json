@@ -1,0 +1,22 @@
+{
+  "name": "test-plugin",
+  "version": "1.0.6",
+  "type": "module",
+  "scripts": {
+    "clean": "shx rm -rf dist *.zip",
+    "build:js": "node scripts/build.js",
+    "build:schema": "if-file-exists src/settings.ts \"typescript-json-schema src/settings.ts PluginSettings --required --out dist/schema.json\" \"shx cp src/schema.json dist/ 2>/dev/null || true\"",
+    "build:types": "if-file-exists src/index.ts \"tsc --emitDeclarationOnly --declaration --declarationDir dist\" \"shx cp src/index.d.ts dist/ 2>/dev/null || true\"",
+    "finalize": "shx cp manifest.json dist/",
+    "zip": "node scripts/zip.js",
+    "build": "npm run clean && shx mkdir -p dist && npm run build:js && npm run build:schema && npm run build:types && npm run finalize && npm run zip"
+  },
+  "devDependencies": {
+    "bestzip": "^2.2.1",
+    "esbuild": "^0.25.0",
+    "if-file-exists-cli": "^2.0.1",
+    "shx": "^0.3.4",
+    "typescript": "^5.0.0",
+    "typescript-json-schema": "^0.65.0"
+  }
+}

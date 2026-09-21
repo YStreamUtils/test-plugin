@@ -1,7 +1,7 @@
 /**
  * The standard response returned by YouTube messaging operations.
  */
-interface YoutubeReplyResponse {
+export interface YoutubeReplyResponse {
   /**
    * The final operational status.
    */
@@ -15,24 +15,16 @@ interface YoutubeReplyResponse {
 /**
  * Interface for interacting with the host's YouTube API context.
  *
- * **Plugin Permission:** `youtube` (Only required when running as a plugin)
+ * **Plugin Permission:** `youtube`
  */
-interface YoutubeContext {
+export interface YoutubeContext {
   /**
-   * Sends a plain message directly to a YouTube Live Chat stream.
-   *
-   * @param liveChatID - The unique ID of the target Live Chat room.
-   * @param message - The raw text message content to transmit.
+   * Sends a message directly to a YouTube Live Chat stream.
    */
   sendMessage(liveChatID: string, message: string): void;
 
   /**
-   * Sends a targeted reply to a specific user within a YouTube Live Chat stream.
-   *
-   * @param liveChatID - The unique ID of the target Live Chat room.
-   * @param authorID - The unique ID of the user being replied to.
-   * @param text - The raw text message content to transmit.
-   * @returns An object containing the operational status and response message.
+   * Sends a reply to a user within a YouTube Live Chat stream.
    */
   replyToMessage(
     liveChatID: string,
@@ -44,77 +36,68 @@ interface YoutubeContext {
 /**
  * Interface for interacting with the host's network layer.
  *
- * **Plugin Permission:** `network` (Only required when running as a plugin)
+ * **Plugin Permission:** `network`
  */
-interface HostNetwork {
+export interface HostNetwork {
   /**
    * Executes a network request using the host environment's networking stack.
-   *
-   * @param url - The fully-qualified destination URL endpoint.
-   * @param options - Configuration overrides (e.g., headers, body, method).
-   * @returns The raw network response payload.
+   * 
+   * @returns The raw string response payload from the endpoint.
    */
-  fetch(url: string, options?: any): any;
+  fetch(url: string, options?: {
+    method?: "GET" | "POST" | "PUT" | "DELETE";
+    headers?: Record<string, string>;
+    body?: string;
+  }): string;
 }
 
-interface HostCache {
+/**
+ * Scoped Key-Value Cache storage provider.
+ */
+export interface HostCache {
   /**
-   * Gets an object from cache (Untyped)
-   * @param key The key of the object you want to get from cache
-   * @returns The value if it is found, null if it is not.
+   * Retrieves a string or object value from the cache.
+   * @returns The parsed value if found, or null if missing/expired.
    */
   get(key: string): any | null;
 
   /**
-   * Gets an object from cache (Typed)
-   * @param key The key of the object you want to get from cache
-   * @returns The value (as T) if it is found, null if it is not
-   */
-  get<T>(key: string): T | null;
-
-  /**
-   * Adds an object to the cache
-   * @param key The key of the object to cache
-   * @param value The value of the object to cache
+   * Saves an item to the cache database.
    */
   set(key: string, value: any): void;
 
   /**
-   * Deletes an object from the cache
-   * @param key The key of the item to delete
+   * Explicitly removes a targeted item from the cache.
    */
   delete(key: string): void;
 
   /**
-   * Deletes the whole cache
+   * Wipes all keys belonging to this specific plugin sandbox.
    */
   clear(): void;
 }
 
 /**
- * The global object exposed by the script/plugin runtime environment.
+ * The unified runtime context proxy injected by the C# application layer.
  */
-declare namespace host {
+export interface HostContext {
   /**
-   * Writes to the host logs.
-   *
-   * @param level - The severity threshold tier (`"debug"`, `"info"`, `"warn"`, `"error"`).
-   * @param msg - The core log description message text.
+   * Writes a categorized entry into the application's central logs.
    */
-  function log(level: "debug" | "info" | "warn" | "error", msg: string): void;
+  log(level: "debug" | "info" | "warn" | "error", msg: string): void;
 
   /**
-   * Shared networking capabilities proxy.
+   * Dedicated proxy for outbound HTTP networking requests.
    */
-  const network: HostNetwork;
+  readonly network: HostNetwork;
 
   /**
-   * Shared YouTube streaming features context proxy.
+   * Dedicated context for YouTube Live streaming interactions.
    */
-  const youtube: YoutubeContext;
+  readonly youtube: YoutubeContext;
 
   /**
-   * Scoped Cache (based on plugin namespace or script name)
+   * Dedicated persistent key-value caching space.
    */
-  const cache: HostCache;
+  readonly cache: HostCache;
 }
