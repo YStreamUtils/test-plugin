@@ -31,13 +31,20 @@ async function build() {
     console.log("Generating type definitions (index.d.ts)...");
     try {
       execSync(
-        `npx tsc ${manifest.entryPoint} --declaration --emitDeclarationOnly --outFile dist/index.d.ts`,
-        { stdio: "inherit" },
+        `npx tsc ${manifest.entryPoint} --declaration --emitDeclarationOnly --outDir dist`,
+        { stdio: "inherit" }
       );
+      
+      const entryFileInfo = path.parse(manifest.entryPoint);
+      const generatedDtsPath = path.join("dist", `${entryFileInfo.name}.d.ts`);
+      const finalDtsPath = "dist/index.d.ts";
+
+      if (fs.existsSync(generatedDtsPath) && generatedDtsPath !== finalDtsPath) {
+        fs.renameSync(generatedDtsPath, finalDtsPath);
+      }
     } catch (tscErr) {
-      console.warn(
-        "Warning: Type definition generation encountered compilation errors.",
-      );
+      console.error("TypeScript declaration generation failed:", tscErr.message || tscErr);
+      process.exit(1);
     }
 
     if (fs.existsSync("src/settings.ts")) {
