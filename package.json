@@ -1,6 +1,6 @@
 {
   "name": "test-plugin",
-  "version": "1.0.21",
+  "version": "1.0.22",
   "type": "module",
   "scripts": {
     "version": "node -e \"const m=require('./manifest.json'),p=require('./package.json'); m.version=p.version; require('fs').writeFileSync('manifest.json', JSON.stringify(m, null, 2))\" && git add manifest.json"
