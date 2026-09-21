@@ -26,20 +26,56 @@ jobs:
       - name: Install Project Tooling
         run: npm ci
 
-      - name: Execute Package Pipeline
-        run: npm run build
-
-      - name: Parse Zip Name for Release
-        id: parse_name
+      - name: Parse Environment Variables
+        id: parse_env
         run: |
-          PLUGIN_NAME=$(jq -r '.name' manifest.json)
-          echo "zip_name=${PLUGIN_NAME}.zip" >> $GITHUB_OUTPUT
+          ENTRY_POINT=$(jq -r '.entryPoint' manifest.json)
+          MANIFEST_NAME=$(jq -r '.name' manifest.json)
+          SANITIZED_NAME=$(echo "$MANIFEST_NAME" | sed 's/[^a-zA-Z0-9\-_]/_/g')
+          
+          echo "entry_point=$ENTRY_POINT" >> $GITHUB_OUTPUT
+          echo "zip_name=${SANITIZED_NAME}.zip" >> $GITHUB_OUTPUT
+
+      - name: Execute Package Pipeline
+        run: |
+          rm -rf dist
+          mkdir -p dist
+
+          cp manifest.json dist/manifest.json
+
+          npx esbuild "${{ steps.parse_env.outputs.entry_point }}" \
+            --bundle \
+            --minify \
+            --tree-shaking=true \
+            --format=esm \
+            --platform=neutral \
+            --target=es2022 \
+            --outfile=dist/index.js
+
+          if npx tsc --project tsconfig.json --declaration --emitDeclarationOnly --outDir dist --rootDir src; then
+            ENTRY_BASE=$(basename "${{ steps.parse_env.outputs.entry_point }}" | sed 's/\.[^\.]*$//')
+            if [ -f "dist/${ENTRY_BASE}.d.ts" ] && [ "${ENTRY_BASE}" != "index" ]; then
+              mv "dist/${ENTRY_BASE}.d.ts" dist/index.d.ts
+            fi
+          fi
+
+          if [ -f "src/settings.ts" ]; then
+            npx ts-json-schema-generator --path src/settings.ts --tsconfig tsconfig.json --type PluginSettings --expose export --topRef > dist/schema.json
+          fi
+
+          cd dist
+          ARCHIVE_ITEMS=("index.js" "manifest.json")
+          [ -f "index.d.ts" ] && ARCHIVE_ITEMS+=("index.d.ts")
+          [ -f "schema.json" ] && ARCHIVE_ITEMS+=("schema.json")
+          
+          npx bestzip "../${{ steps.parse_env.outputs.zip_name }}" "${ARCHIVE_ITEMS[@]}"
+          cd ..
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
           files: |
-            ${{ steps.parse_name.outputs.zip_name }}
+            ${{ steps.parse_env.outputs.zip_name }}
           fail_on_unmatched_files: true
           generate_release_notes: true
         env:

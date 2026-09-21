@@ -1,7 +1,7 @@
 {
   "$schema": "https://ystreamutils.github.io/YStreamUtils-Plugin-Registry/schema.json",
   "name": "test-plugin",
-  "version": "1.0.18",
+  "version": "1.0.19",
   "entryPoint": "src/index.ts",
   "permissions": [
     "network"
