@@ -1,17 +1,18 @@
 /// <reference path="./host.d.ts" />
+
 import { hello } from "./extra_functions.js";
 import { HostContext } from "./host.js";
 import type { PluginSettings } from "./settings.js";
 
-export class TestPlugin {
+export default class TestPlugin {
   constructor(private host: HostContext, private settings: PluginSettings) {}
 
-  truncate(text: string, maxLength: number) {
-    if (text.length <= maxLength) return text;
-    return text.substring(0, maxLength) + "...";
+  public truncate(text: string) {
+    if (text.length <= this.settings.truncateAmount) return text;
+    return text.substring(0, this.settings.truncateAmount) + "...";
   }
 
-  sendToLogServer(payload: any) {
+  public sendToLogServer(payload: any) {
     var responseString = this.host.network.fetch("https://httpbin.org/post", {
       method: "POST",
       body: JSON.stringify({ log: payload }),
@@ -20,9 +21,7 @@ export class TestPlugin {
     return JSON.parse(responseString);
   }
 
-  helloExport() {
+  public helloExport() {
     return hello();
   }
-
 }
-(globalThis as any).TestPlugin = TestPlugin;

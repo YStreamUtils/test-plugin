@@ -1,89 +1,64 @@
 import esbuild from "esbuild";
 import fs from "fs";
-import { spawnSync } from "child_process";
+import path from "path";
 import bestzip from "bestzip";
+import * as tsj from "ts-json-schema-generator";
 
 async function build() {
-  if (fs.existsSync("dist")) {
-    fs.rmSync("dist", { recursive: true, force: true });
-  }
-
-  const files = fs.readdirSync(".");
-  for (const file of files) {
-    if (file.endsWith(".zip")) {
-      fs.unlinkSync(file);
-    }
-  }
-
-  fs.mkdirSync("dist", { recursive: true });
-
-  const manifest = JSON.parse(fs.readFileSync("manifest.json", "utf8"));
-
-  if (!manifest.name || !manifest.entryPoint || !manifest.className) {
-    process.exit(1);
-  }
-
-  function runTool(command, args) {
-    const result = spawnSync(command, args, { stdio: "inherit", shell: true });
-    if (result.status !== 0) {
-      process.exit(result.status || 1);
-    }
-  }
-
   try {
+    if (fs.existsSync("dist")) {
+      fs.rmSync("dist", { recursive: true, force: true });
+    }
+    fs.mkdirSync("dist", { recursive: true });
+
+    const manifest = JSON.parse(fs.readFileSync("manifest.json", "utf8"));
+    const sanitizedZipName =
+      manifest.name.replace(/[^a-zA-Z0-9\-_]/g, "_") + ".zip";
+
+    console.log("Bundling plugin source code...");
     esbuild.buildSync({
       entryPoints: [manifest.entryPoint],
       bundle: true,
-      minifySyntax: true,
-      minifyWhitespace: true,
-      format: "iife",
+      minify: true,
+      treeShaking: true,
+      format: "esm",
+      platform: "neutral",
+      target: "es2022",
       outfile: "dist/index.js",
     });
-  } catch (err) {
-    process.exit(1);
-  }
 
-  if (fs.existsSync("src/settings.ts")) {
-    runTool("typescript-json-schema", [
-      "src/settings.ts",
-      "PluginSettings",
-      "--required",
-      "--out",
-      "dist/schema.json",
-    ]);
-  } else if (fs.existsSync("src/schema.json")) {
-    fs.copyFileSync("src/schema.json", "dist/schema.json");
-  }
+    if (fs.existsSync("src/settings.ts")) {
+      console.log(
+        "Automatically generating schema.json from src/settings.ts...",
+      );
 
-  if (fs.existsSync("src/index.ts")) {
-    runTool("tsc", [
-      "--emitDeclarationOnly",
-      "--declaration",
-      "--declarationDir",
-      "dist",
-    ]);
-  } else if (fs.existsSync("src/index.d.ts")) {
-    fs.copyFileSync("src/index.d.ts", "dist/index.d.ts");
-  }
+      const config = {
+        path: "src/settings.ts",
+        tsconfig: "tsconfig.json",
+        type: "PluginSettings",
+        expose: "export",
+        topRef: true,
+      };
 
-  try {
-    fs.copyFileSync("manifest.json", "dist/manifest.json");
-  } catch (err) {
-    process.exit(1);
-  }
-
-  const zipName = `${manifest.name}.zip`;
-  try {
-    try {
-      await bestzip({
-        source: "*",
-        cwd: "dist",
-        destination: `../${zipName}`,
-      });
-    } catch (err) {
-      process.exit(1);
+      const schema = tsj.createGenerator(config).createSchema(config.type);
+      fs.writeFileSync("dist/schema.json", JSON.stringify(schema, null, 2));
     }
+
+    fs.copyFileSync("manifest.json", "dist/manifest.json");
+
+    console.log("Packaging extension artifacts...");
+    const archiveItems = ["index.js", "manifest.json"];
+    if (fs.existsSync("dist/schema.json")) archiveItems.push("schema.json");
+
+    await bestzip({
+      source: archiveItems,
+      cwd: "dist",
+      destination: path.join("..", sanitizedZipName),
+    });
+
+    console.log(`Success: Created plugin package ${sanitizedZipName}`);
   } catch (err) {
+    console.error("Build failure:", err.message || err);
     process.exit(1);
   }
 }

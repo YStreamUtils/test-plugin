@@ -3,7 +3,6 @@
   "name": "test-plugin",
   "version": "1.0.9",
   "entryPoint": "src/index.ts",
-  "className": "TestPlugin",
   "permissions": [
     "network"
   ],
