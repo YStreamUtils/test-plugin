@@ -60,7 +60,7 @@ jobs:
           fi
 
           if [ -f "src/settings.ts" ]; then
-            npx ts-json-schema-generator --path src/settings.ts --tsconfig tsconfig.json --type PluginSettings --expose export --topRef > dist/schema.json
+            npx ts-json-schema-generator --path src/settings.ts --tsconfig tsconfig.json --type PluginSettings --expose export > dist/schema.json
           fi
 
           cd dist
